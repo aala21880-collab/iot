@@ -47,7 +47,13 @@ export const App: React.FC = () => {
     const saved = localStorage.getItem('agri_current_user');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        // Clear old automatic test profile if it exists in visitor browser localStorage
+        if (parsed && (parsed.id === 'usr-101' || parsed.email === 'budi@petani.id')) {
+          localStorage.removeItem('agri_current_user');
+          return null;
+        }
+        return parsed;
       } catch (e) {
         console.error(e);
       }
