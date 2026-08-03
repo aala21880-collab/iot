@@ -1,456 +1,176 @@
-import 'dotenv/config';
-import express from 'express';
+import { JSONFilePreset } from 'lowdb/node';
 import path from 'node:path';
-import fs from 'node:fs';
-import { createServer as createViteServer } from 'vite';
-import { getDatabase } from './server/db';
-import { testMysqlConnection, getMysqlPool } from './server/mysql';
+import os from 'node:os';
+import type { Land, ActivityLog, SensorNotification, HistoricalReading, IoTDevice } from '../src/types';
 
-async function startServer() {
-  const app = express();
-  const PORT = 3000;
-
-  app.use(express.json());
-
-  // Database initialization (LowDB fallback & JSON local storage)
-  const db = await getDatabase();
-
-  // Test MySQL XAMPP connection status on boot
-  const mysqlStatus = await testMysqlConnection();
-  console.log('[AgriSteward DB Check]:', mysqlStatus.message);
-
-  // --- API ROUTES ---
-
-  // Health check & Database Status
-  app.get('/api/health', async (_req, res) => {
-    const liveMysql = await testMysqlConnection();
-    res.json({
-      status: 'ok',
-      engine: liveMysql.connected ? 'MySQL (XAMPP)' : 'LowDB (JSON Persistence)',
-      mysql: liveMysql,
-      timestamp: new Date().toISOString()
-    });
-  });
-
-  // Download XAMPP SQL Dump
-  app.get('/api/download-sql', (_req, res) => {
-    const sqlPath = path.join(process.cwd(), 'agristeward_xampp.sql');
-    if (fs.existsSync(sqlPath)) {
-      res.setHeader('Content-Type', 'text/plain');
-      res.setHeader('Content-Disposition', 'attachment; filename="agristeward_xampp.sql"');
-      res.sendFile(sqlPath);
-    } else {
-      res.status(404).json({ error: 'File SQL tidak ditemukan' });
-    }
-  });
-
-  // GET all lands
-  app.get('/api/lands', async (_req, res) => {
-    try {
-      const mysqlCheck = await testMysqlConnection();
-      if (mysqlCheck.connected) {
-        const pool = getMysqlPool();
-        const [rows] = await pool.query('SELECT * FROM lands ORDER BY created_at DESC');
-        res.json(rows);
-        return;
-      }
-    } catch (err) {
-      console.warn('Fallback ke LowDB:', err);
-    }
-
-    await db.read();
-    res.json(db.data.lands || []);
-  });
-
-  // POST create land
-  app.post('/api/lands', async (req, res) => {
-    try {
-      const newLand = req.body;
-      if (!newLand.id) {
-        newLand.id = `land-${Date.now()}`;
-      }
-
-      // Try MySQL
-      const mysqlCheck = await testMysqlConnection();
-      if (mysqlCheck.connected) {
-        const pool = getMysqlPool();
-        await pool.query(
-          `INSERT INTO lands (id, name, location, areaHa, soilType, status, activeSensors, imageUrl, moisturePercent, phLevel, temperatureC, nitrogenMgKg, phosphorusMgKg, potassiumMgKg)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-           ON DUPLICATE KEY UPDATE name=VALUES(name)`,
-          [
-            newLand.id,
-            newLand.name,
-            newLand.location,
-            newLand.areaHa || 1.0,
-            newLand.soilType || 'Lempung',
-            newLand.status || 'Sangat Subur',
-            newLand.activeSensors || 0,
-            newLand.imageUrl || '',
-            newLand.moisturePercent || 60,
-            newLand.phLevel || 6.5,
-            newLand.temperatureC || 28.0,
-            newLand.nitrogenMgKg || 100,
-            newLand.phosphorusMgKg || 30,
-            newLand.potassiumMgKg || 150
-          ]
-        );
-        console.log(`[MySQL] Berhasil INSERT lahan baru '${newLand.name}' (ID: ${newLand.id}) ke database MySQL!`);
-      } else {
-        console.log(`[MySQL] Server tidak terhubung ke MySQL (${mysqlCheck.message}). Menyimpan ke LowDB.`);
-      }
-
-      // Sync LowDB
-      await db.read();
-      db.data.lands.push(newLand);
-
-      const newLog = {
-        id: `log-${Date.now()}`,
-        timestamp: 'Baru Saja',
-        landName: newLand.name,
-        event: 'Pendaftaran lahan baru dan pemasangan sensor',
-        status: 'SELESAI' as const,
-      };
-      db.data.activityLogs.unshift(newLog);
-
-      await db.write();
-      res.status(201).json({ land: newLand, log: newLog });
-    } catch (err) {
-      res.status(500).json({ error: 'Gagal menambah lahan', details: String(err) });
-    }
-  });
-
-  // PUT update land
-  app.put('/api/lands/:id', async (req, res) => {
-    try {
-      const { id } = req.params;
-      await db.read();
-      const index = db.data.lands.findIndex((l) => l.id === id);
-      if (index === -1) {
-        res.status(404).json({ error: 'Lahan tidak ditemukan' });
-        return;
-      }
-      db.data.lands[index] = { ...db.data.lands[index], ...req.body };
-      await db.write();
-
-      const mysqlCheck = await testMysqlConnection();
-      if (mysqlCheck.connected) {
-        const pool = getMysqlPool();
-        const updated = db.data.lands[index];
-        await pool.query(
-          `UPDATE lands SET name=?, location=?, areaHa=?, soilType=?, status=?, moisturePercent=?, phLevel=?, temperatureC=? WHERE id=?`,
-          [
-            updated.name,
-            updated.location,
-            updated.areaHa,
-            updated.soilType,
-            updated.status,
-            updated.moisturePercent,
-            updated.phLevel,
-            updated.temperatureC,
-            id
-          ]
-        );
-        console.log(`[MySQL] Berhasil UPDATE lahan '${updated.name}' (ID: ${id}) di database MySQL XAMPP!`);
-      }
-
-      res.json(db.data.lands[index]);
-    } catch (err) {
-      res.status(500).json({ error: 'Gagal memperbarui lahan', details: String(err) });
-    }
-  });
-
-  // DELETE land
-  app.delete('/api/lands/:id', async (req, res) => {
-    try {
-      const { id } = req.params;
-      await db.read();
-      db.data.lands = db.data.lands.filter((l) => l.id !== id);
-      await db.write();
-
-      const mysqlCheck = await testMysqlConnection();
-      if (mysqlCheck.connected) {
-        const pool = getMysqlPool();
-        await pool.query('DELETE FROM lands WHERE id = ?', [id]);
-        console.log(`[MySQL] Berhasil DELETE lahan ID '${id}' dari database MySQL XAMPP!`);
-      }
-
-      res.json({ success: true, id });
-    } catch (err) {
-      res.status(500).json({ error: 'Gagal menghapus lahan' });
-    }
-  });
-
-  // POST trigger irrigation
-  app.post('/api/lands/:id/irrigate', async (req, res) => {
-    try {
-      const { id } = req.params;
-      await db.read();
-      const land = db.data.lands.find((l) => l.id === id);
-      if (!land) {
-        res.status(404).json({ error: 'Lahan tidak ditemukan' });
-        return;
-      }
-
-      land.moisturePercent = Math.min(95, land.moisturePercent + 12);
-
-      const newLog = {
-        id: `log-${Date.now()}`,
-        timestamp: 'Baru Saja',
-        landName: land.name,
-        event: 'Irigasi otomatis diaktifkan via server',
-        status: 'SELESAI' as const,
-      };
-      db.data.activityLogs.unshift(newLog);
-
-      await db.write();
-
-      const mysqlCheck = await testMysqlConnection();
-      if (mysqlCheck.connected) {
-        const pool = getMysqlPool();
-        await pool.query('UPDATE lands SET moisturePercent = ? WHERE id = ?', [land.moisturePercent, id]);
-        await pool.query('INSERT INTO activity_logs (id, timestamp, landName, event, status) VALUES (?, ?, ?, ?, ?)', [
-          newLog.id,
-          newLog.timestamp,
-          newLog.landName,
-          newLog.event,
-          newLog.status
-        ]);
-      }
-
-      res.json({ land, log: newLog });
-    } catch (err) {
-      res.status(500).json({ error: 'Gagal mengaktifkan irigasi' });
-    }
-  });
-
-  // GET all IoT devices
-  app.get('/api/devices', async (_req, res) => {
-    try {
-      const mysqlCheck = await testMysqlConnection();
-      if (mysqlCheck.connected) {
-        const pool = getMysqlPool();
-        const [rows] = await pool.query('SELECT * FROM devices ORDER BY created_at DESC');
-        res.json(rows);
-        return;
-      }
-    } catch (err) {
-      console.warn('Fallback ke LowDB:', err);
-    }
-
-    await db.read();
-    res.json(db.data.devices || []);
-  });
-
-  // POST add new device
-  app.post('/api/devices', async (req, res) => {
-    try {
-      const newDevice = req.body;
-      if (!newDevice.id) {
-        newDevice.id = `dev-${Date.now()}`;
-      }
-
-      const mysqlCheck = await testMysqlConnection();
-      if (mysqlCheck.connected) {
-        const pool = getMysqlPool();
-        await pool.query(
-          `INSERT INTO devices (id, name, type, landSector, status, batteryPercent, lastPing, firmware)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            newDevice.id,
-            newDevice.name,
-            newDevice.type,
-            newDevice.landSector,
-            newDevice.status || 'Online',
-            newDevice.batteryPercent || 100,
-            newDevice.lastPing || 'Baru Saja',
-            newDevice.firmware || 'v1.0.0'
-          ]
-        );
-      }
-
-      await db.read();
-      db.data.devices.unshift(newDevice);
-      await db.write();
-
-      res.status(201).json(newDevice);
-    } catch (err) {
-      res.status(500).json({ error: 'Gagal mendaftarkan perangkat' });
-    }
-  });
-
-  // PUT update device
-  app.put('/api/devices/:id', async (req, res) => {
-    try {
-      const { id } = req.params;
-      const updates = req.body;
-
-      await db.read();
-      const index = db.data.devices.findIndex((d) => d.id === id);
-      if (index === -1) {
-        res.status(404).json({ error: 'Perangkat tidak ditemukan' });
-        return;
-      }
-
-      db.data.devices[index] = { ...db.data.devices[index], ...updates };
-      await db.write();
-
-      const mysqlCheck = await testMysqlConnection();
-      if (mysqlCheck.connected) {
-        const pool = getMysqlPool();
-        await pool.query(
-          `UPDATE devices SET name=?, type=?, landSector=?, status=?, batteryPercent=?, firmware=? WHERE id=?`,
-          [
-            db.data.devices[index].name,
-            db.data.devices[index].type,
-            db.data.devices[index].landSector,
-            db.data.devices[index].status,
-            db.data.devices[index].batteryPercent,
-            db.data.devices[index].firmware,
-            id,
-          ]
-        );
-      }
-
-      res.json(db.data.devices[index]);
-    } catch (err) {
-      res.status(500).json({ error: 'Gagal mengupdate perangkat' });
-    }
-  });
-
-  // DELETE device
-  app.delete('/api/devices/:id', async (req, res) => {
-    try {
-      const { id } = req.params;
-      await db.read();
-      db.data.devices = db.data.devices.filter((d) => d.id !== id);
-      await db.write();
-
-      const mysqlCheck = await testMysqlConnection();
-      if (mysqlCheck.connected) {
-        const pool = getMysqlPool();
-        await pool.query('DELETE FROM devices WHERE id = ?', [id]);
-        console.log(`[MySQL] Berhasil DELETE perangkat ID '${id}' dari database MySQL XAMPP!`);
-      }
-
-      res.json({ success: true, id });
-    } catch (err) {
-      res.status(500).json({ error: 'Gagal menghapus perangkat' });
-    }
-  });
-
-  // GET activity logs
-  app.get('/api/activity-logs', async (_req, res) => {
-    try {
-      const mysqlCheck = await testMysqlConnection();
-      if (mysqlCheck.connected) {
-        const pool = getMysqlPool();
-        const [rows] = await pool.query('SELECT * FROM activity_logs ORDER BY created_at DESC');
-        res.json(rows);
-        return;
-      }
-    } catch (err) {
-      console.warn('Fallback ke LowDB:', err);
-    }
-
-    await db.read();
-    res.json(db.data.activityLogs || []);
-  });
-
-  // GET notifications
-  app.get('/api/notifications', async (_req, res) => {
-    try {
-      const mysqlCheck = await testMysqlConnection();
-      if (mysqlCheck.connected) {
-        const pool = getMysqlPool();
-        const [rows] = await pool.query('SELECT * FROM notifications ORDER BY created_at DESC');
-        res.json(rows);
-        return;
-      }
-    } catch (err) {
-      console.warn('Fallback ke LowDB:', err);
-    }
-
-    await db.read();
-    res.json(db.data.notifications || []);
-  });
-
-  // PUT mark all notifications read
-  app.put('/api/notifications/read-all', async (_req, res) => {
-    try {
-      await db.read();
-      db.data.notifications = db.data.notifications.map((n) => ({ ...n, read: true }));
-      await db.write();
-
-      const mysqlCheck = await testMysqlConnection();
-      if (mysqlCheck.connected) {
-        const pool = getMysqlPool();
-        await pool.query('UPDATE notifications SET `read` = 1');
-      }
-
-      res.json(db.data.notifications);
-    } catch (err) {
-      res.status(500).json({ error: 'Gagal memperbarui notifikasi' });
-    }
-  });
-
-  // DELETE clear notifications
-  app.delete('/api/notifications', async (_req, res) => {
-    try {
-      await db.read();
-      db.data.notifications = [];
-      await db.write();
-
-      const mysqlCheck = await testMysqlConnection();
-      if (mysqlCheck.connected) {
-        const pool = getMysqlPool();
-        await pool.query('DELETE FROM notifications');
-      }
-
-      res.json({ success: true });
-    } catch (err) {
-      res.status(500).json({ error: 'Gagal membersihkan notifikasi' });
-    }
-  });
-
-  // GET historical readings
-  app.get('/api/historical-readings', async (_req, res) => {
-    try {
-      const mysqlCheck = await testMysqlConnection();
-      if (mysqlCheck.connected) {
-        const pool = getMysqlPool();
-        const [rows] = await pool.query('SELECT * FROM historical_readings ORDER BY created_at DESC');
-        res.json(rows);
-        return;
-      }
-    } catch (err) {
-      console.warn('Fallback ke LowDB:', err);
-    }
-
-    await db.read();
-    res.json(db.data.historicalReadings || []);
-  });
-
-  // --- VITE MIDDLEWARE SETUP ---
-  if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (_req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
-  }
-
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server AgriSteward running on http://localhost:${PORT}`);
-  });
+export interface DatabaseSchema {
+  lands: Land[];
+  activityLogs: ActivityLog[];
+  notifications: SensorNotification[];
+  historicalReadings: HistoricalReading[];
+  devices: IoTDevice[];
 }
 
-startServer().catch((err) => {
-  console.error('Gagal menjalankan server:', err);
-});
+const defaultData: DatabaseSchema = {
+  lands: [
+    {
+      id: 'land-1',
+      name: 'Lahan Utara',
+      location: 'Kecamatan Sukamandi, Jawa Barat',
+      areaHa: 4.2,
+      soilType: 'Lempung Aluvial',
+      status: 'Sangat Subur',
+      activeSensors: 3,
+      imageUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAi1XEoRKyeNnl26A8K5xyNct6XxOBud6eX7YUaOxpGztn4UjyjaV4YShYEGW9gn5qFko2Rym_Y8uR2SciAtY9klmypBo7kFrZeIVbKN5NMTw2_8ueG4_YoTb5OMLycVOkXzWhC1uDug7FJa98tD7qLLcQhkwV5noL6GVaYWYXpcIztREf9h92wPf5ytxtADQjmMaR3KAhlUaKq-gzrlLHA1QH0YHzdcMMhz06IbYKZDkZv9j0A89rDXd8Fmm_gxxWQEohd3qDJiKdB',
+      moisturePercent: 72,
+      phLevel: 6.6,
+      temperatureC: 27.5,
+      nitrogenMgKg: 140,
+      phosphorusMgKg: 45,
+      potassiumMgKg: 180,
+    },
+    {
+      id: 'land-2',
+      name: 'Lahan Selatan',
+      location: 'Kecamatan Ciasem, Jawa Barat',
+      areaHa: 3.5,
+      soilType: 'Tanah Grumosol',
+      status: 'Sedang',
+      activeSensors: 5,
+      imageUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAtEz3WzRos1onmjrUMy324xpeOtkvy-MzSedpQ7cxjoB0rkTJrBfOILybgouYNxu4ORhMDRkRzqT8q_Bkgg9ZhKx1CG74gbUz5SdbcDrEwI9PRR5S87zpGVnfC3zju_EbNEWv1ADGMURDtaFDnNtSDxc9r2kP-qcwWMzGNW_-Z-F_-55FWs-cZRy3lzlBkqt-kU629VXFyi6CqH8H64IE6Cf6OUKnTVCslN-OIYsFeeUcvSsIbmkiJfIoWcgn9lTuixCo0xCynHc2s',
+      moisturePercent: 68,
+      phLevel: 6.5,
+      temperatureC: 28.0,
+      nitrogenMgKg: 120,
+      phosphorusMgKg: 38,
+      potassiumMgKg: 160,
+    },
+    {
+      id: 'land-3',
+      name: 'Lahan Barat',
+      location: 'Kecamatan Binong, Jawa Barat',
+      areaHa: 4.7,
+      soilType: 'Tanah Latosol',
+      status: 'Butuh Perhatian',
+      activeSensors: 4,
+      imageUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDcL0C2kkdJvClyKNktPh-65FE_mKZv8w1hnV5iCQBiW0-luoK38fFKnfwynhEeeKFYLW8va0zt7n_nQxOJ_cX61JdqG_kKuTdkeag2E--vxaDnYC2BgW69F7kJE7AIIUsT6UBDwRNE3FKSXchJD_sHSaRKrPsHBpldPkDhDlXM8VbZz41XeBHp5nJGcl1Fp4Jgu-txkSwXSUWLipBVaG-y9WZmFqiwebA-GgJTLrKelQSXj5OVqKRXlGMYvAZeV438VB8Hw_kZVaH5',
+      moisturePercent: 54,
+      phLevel: 4.2,
+      temperatureC: 29.8,
+      nitrogenMgKg: 85,
+      phosphorusMgKg: 20,
+      potassiumMgKg: 110,
+    }
+  ],
+  activityLogs: [
+    {
+      id: 'log-1',
+      timestamp: '12:30, 24 Okt',
+      landName: 'Lahan Utara',
+      event: 'Irigasi diaktifkan otomatis',
+      status: 'SELESAI'
+    },
+    {
+      id: 'log-2',
+      timestamp: '09:15, 24 Okt',
+      landName: 'Lahan Barat',
+      event: 'pH tanah turun drastis (4.2)',
+      status: 'WARNING'
+    },
+    {
+      id: 'log-3',
+      timestamp: '06:00, 24 Okt',
+      landName: 'Lahan Selatan',
+      event: 'Update data sensor pagi',
+      status: 'INFO'
+    },
+    {
+      id: 'log-4',
+      timestamp: '22:15, 23 Okt',
+      landName: 'Lahan Utara',
+      event: 'Deteksi tingkat kelembapan optimal (72%)',
+      status: 'INFO'
+    },
+    {
+      id: 'log-5',
+      timestamp: '18:00, 23 Okt',
+      landName: 'Lahan Barat',
+      event: 'Sistem peringatan dini pupuk terpicu',
+      status: 'WARNING'
+    }
+  ],
+  notifications: [
+    {
+      id: 'notif-1',
+      title: 'pH Lahan A rendah',
+      description: 'Sensor ID-24 melaporkan penurunan pH drastis di sektor Timur (pH 5.2).',
+      timestamp: '15 menit yang lalu',
+      level: 'urgent',
+      read: false,
+      landId: 'land-3'
+    },
+    {
+      id: 'notif-2',
+      title: 'Koneksi Putus - Sensor 12',
+      description: 'Gateway gagal menerima data dari Node 12 selama 1 jam terakhir.',
+      timestamp: '45 menit yang lalu',
+      level: 'urgent',
+      read: false
+    },
+    {
+      id: 'notif-3',
+      title: 'Jadwal Irigasi Selesai',
+      description: 'Pompa Lahan B telah berhenti beroperasi sesuai jadwal pukul 12:00.',
+      timestamp: '2 jam yang lalu',
+      level: 'info',
+      read: true,
+      landId: 'land-2'
+    },
+    {
+      id: 'notif-4',
+      title: 'Peringatan Suhu Tinggi',
+      description: 'Suhu tanah Lahan Barat mencapai 29.8°C melebihi rata-rata harian.',
+      timestamp: '3 jam yang lalu',
+      level: 'warning',
+      read: true,
+      landId: 'land-3'
+    }
+  ],
+  historicalReadings: [
+    { id: 'hr-1', timestamp: 'May 21, 2024 · 14:00', landSector: 'West Sector A1', tempC: 28.4, humidityPercent: 62, soilPh: 6.8, status: 'Normal' },
+    { id: 'hr-2', timestamp: 'May 21, 2024 · 13:30', landSector: 'West Sector A1', tempC: 27.9, humidityPercent: 63, soilPh: 6.7, status: 'Normal' },
+    { id: 'hr-3', timestamp: 'May 21, 2024 · 13:00', landSector: 'West Sector A1', tempC: 29.1, humidityPercent: 58, soilPh: 6.8, status: 'High Temp' },
+    { id: 'hr-4', timestamp: 'May 21, 2024 · 12:30', landSector: 'West Sector A1', tempC: 27.5, humidityPercent: 65, soilPh: 6.9, status: 'Normal' },
+    { id: 'hr-5', timestamp: 'May 21, 2024 · 12:00', landSector: 'West Sector A1', tempC: 26.8, humidityPercent: 68, soilPh: 6.6, status: 'Normal' },
+    { id: 'hr-6', timestamp: 'May 21, 2024 · 11:30', landSector: 'West Sector A1', tempC: 26.2, humidityPercent: 70, soilPh: 6.5, status: 'Normal' },
+    { id: 'hr-7', timestamp: 'May 21, 2024 · 11:00', landSector: 'East Sector B3', tempC: 29.8, humidityPercent: 54, soilPh: 4.2, status: 'Low pH' },
+    { id: 'hr-8', timestamp: 'May 21, 2024 · 10:30', landSector: 'East Sector B3', tempC: 29.2, humidityPercent: 56, soilPh: 4.5, status: 'Low pH' },
+  ],
+  devices: [
+    { id: 'dev-1', name: 'Probe-ST-001', type: 'Sensor Soil Probe', landSector: 'Lahan Utara - Sektor 01', status: 'Online', batteryPercent: 92, lastPing: '2 mins ago', firmware: 'v2.4.1' },
+    { id: 'dev-2', name: 'Probe-ST-002', type: 'Sensor Soil Probe', landSector: 'Lahan Selatan - Sektor 02', status: 'Online', batteryPercent: 88, lastPing: '5 mins ago', firmware: 'v2.4.1' },
+    { id: 'dev-3', name: 'Probe-ST-012', type: 'Sensor Soil Probe', landSector: 'Lahan Barat - Sektor 04', status: 'Offline', batteryPercent: 12, lastPing: '1 hour ago', firmware: 'v2.3.9' },
+    { id: 'dev-4', name: 'Hydro-Scan-X', type: 'Hydro Scan Gateway', landSector: 'Stasiun Utama Sukamandi', status: 'Online', batteryPercent: 100, lastPing: '1 min ago', firmware: 'v3.0.2' },
+    { id: 'dev-5', name: 'CAM-01 (Live Feed)', type: 'Cam Feed', landSector: 'Lahan Cianjur 01', status: 'Online', batteryPercent: 95, lastPing: '10 secs ago', firmware: 'v1.8.0' },
+    { id: 'dev-6', name: 'WeatherStation-Alpha', type: 'Weather Station', landSector: 'Menara Pemantau Lahan Utara', status: 'Online', batteryPercent: 78, lastPing: '4 mins ago', firmware: 'v2.1.0' },
+  ]
+};
+
+const isServerless = Boolean(process.env.VERCEL || process.env.NODE_ENV === 'production');
+const dbDir = isServerless ? os.tmpdir() : process.cwd();
+const dbFilePath = path.join(dbDir, 'database.json');
+
+export async function getDatabase() {
+  try {
+    const db = await JSONFilePreset<DatabaseSchema>(dbFilePath, defaultData);
+    return db;
+  } catch (err) {
+    console.error('Error initializing LowDB file, falling back:', err);
+    return {
+      data: defaultData,
+      read: async () => {},
+      write: async () => {}
+    } as any;
+  }
+}
+
