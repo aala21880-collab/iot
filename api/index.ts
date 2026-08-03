@@ -93,7 +93,6 @@ app.post('/api/lands', async (req, res) => {
       db.data.lands.unshift(newLand);
     }
     
-    // Add activity log
     const logItem = {
       id: `log-${Date.now()}`,
       timestamp: new Date().toLocaleString('id-ID', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' }),
@@ -172,4 +171,3 @@ app.get('/api/devices', async (_req, res) => {
 });
 
 export default app;
-
