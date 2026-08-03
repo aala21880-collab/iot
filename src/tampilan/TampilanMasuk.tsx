@@ -44,8 +44,8 @@ export const TampilanMasuk: React.FC<TampilanMasukProps> = ({ setCurrentView, on
       };
     } else {
       loggedUser = {
-        id: 'usr-101',
-        name: email.split('@')[0] || 'Budi Santoso',
+        id: `usr-${Date.now()}`,
+        name: email.split('@')[0] || 'Petani Digital',
         email: email,
         phone: '+62 812-3456-7890',
         location: 'Sukamandi, Subang, Jawa Barat',
