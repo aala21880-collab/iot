@@ -25,9 +25,21 @@ export const TampilanMasuk: React.FC<TampilanMasukProps> = ({ setCurrentView, on
       return;
     }
 
-    const savedUsers = JSON.parse(localStorage.getItem('agri_users') || '[]');
+    let savedUsers: any[] = [];
+    try {
+      const stored = localStorage.getItem('agri_users');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          savedUsers = parsed;
+        }
+      }
+    } catch (err) {
+      console.error('Gagal membaca data pengguna:', err);
+    }
+
     const foundUser = savedUsers.find(
-      (u: any) => u.email.toLowerCase() === email.toLowerCase() && u.password === password
+      (u: any) => u && typeof u.email === 'string' && u.email.toLowerCase() === email.toLowerCase() && u.password === password
     );
 
     let loggedUser: UserProfile;
