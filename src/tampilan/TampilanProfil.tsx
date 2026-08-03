@@ -170,7 +170,7 @@ export const TampilanProfil: React.FC<TampilanProfilProps> = ({
             <img
               src={currentAvatar}
               alt="Avatar Profil"
-              className="w-24 h-24 h-[96px] w-[96px] shrink-0 aspect-square rounded-full object-cover ring-4 ring-[#004532]/20 group-hover:opacity-85 transition-opacity"
+              className="w-24 h-24 shrink-0 aspect-square rounded-full object-cover ring-4 ring-[#004532]/20 group-hover:opacity-85 transition-opacity"
             />
             <button
               type="button"
