@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { ViewType } from '../../types';
-import { LayoutDashboard, Sprout, Cpu, Activity, Bell, User, Plus } from 'lucide-react';
+import { LayoutDashboard, Sprout, Cpu, Activity, Bell, User, Plus, History } from 'lucide-react';
 import { LogoAgriSteward } from '../LogoAgriSteward';
 
 interface BilahSampingProps {
@@ -9,6 +9,7 @@ interface BilahSampingProps {
   setCurrentView: (view: ViewType) => void;
   unreadCount: number;
   onOpenAddDevice: () => void;
+  onOpenActivityModal?: () => void;
 }
 
 export const BilahSamping: React.FC<BilahSampingProps> = ({
@@ -16,6 +17,7 @@ export const BilahSamping: React.FC<BilahSampingProps> = ({
   setCurrentView,
   unreadCount,
   onOpenAddDevice,
+  onOpenActivityModal,
 }) => {
   const navItems = [
     { id: 'dashboard' as ViewType, label: 'Dashboard', icon: LayoutDashboard },
@@ -29,7 +31,7 @@ export const BilahSamping: React.FC<BilahSampingProps> = ({
   return (
     <aside className="fixed left-0 top-0 h-screen flex flex-col p-4 border-r border-[#bec9c2] bg-[#f0f3ff] w-64 z-40 hidden md:flex">
       {/* Brand Header */}
-      <div className="flex items-center gap-3 mb-8 px-2 cursor-pointer group" onClick={() => setCurrentView('landing')}>
+      <div className="flex items-center gap-3 mb-6 px-2 cursor-pointer group" onClick={() => setCurrentView('dashboard')}>
         <LogoAgriSteward className="w-10 h-10 shrink-0 drop-shadow-xs group-hover:scale-105 transition-transform" />
         <div>
           <h1 className="font-extrabold text-lg text-[#004532] leading-none tracking-tight">AGRI STEWARD</h1>
@@ -71,6 +73,17 @@ export const BilahSamping: React.FC<BilahSampingProps> = ({
             </button>
           );
         })}
+
+        {/* Dedicated Riwayat Button */}
+        {onOpenActivityModal && (
+          <button
+            onClick={onOpenActivityModal}
+            className="flex items-center gap-3 px-4 py-2.5 mt-2 rounded-xl text-xs font-bold bg-[#004532]/10 hover:bg-[#004532]/20 text-[#004532] transition-colors text-left border border-[#004532]/20"
+          >
+            <History className="w-4 h-4 text-[#004532]" />
+            <span>Riwayat & Penghapusan</span>
+          </button>
+        )}
       </nav>
 
       {/* Add New Device Action */}
