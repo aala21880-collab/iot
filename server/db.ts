@@ -1,5 +1,6 @@
-import { JSONFilePreset } from 'lowdb/node';
 import path from 'node:path';
+import os from 'node:os';
+import fs from 'node:fs';
 import type { Land, ActivityLog, SensorNotification, HistoricalReading, IoTDevice } from '../src/types';
 
 export interface DatabaseSchema {
@@ -155,9 +156,39 @@ const defaultData: DatabaseSchema = {
   ]
 };
 
-const dbFilePath = path.join(process.cwd(), 'database.json');
+const isServerless = Boolean(process.env.VERCEL || process.env.NODE_ENV === 'production');
+const dbDir = isServerless ? os.tmpdir() : process.cwd();
+const dbFilePath = path.join(dbDir, 'database.json');
+
+let inMemoryStore: DatabaseSchema | null = null;
 
 export async function getDatabase() {
-  const db = await JSONFilePreset<DatabaseSchema>(dbFilePath, defaultData);
-  return db;
+  if (!inMemoryStore) {
+    inMemoryStore = JSON.parse(JSON.stringify(defaultData));
+  }
+
+  try {
+    const { JSONFilePreset } = await import('lowdb/node');
+    const db = await JSONFilePreset<DatabaseSchema>(dbFilePath, inMemoryStore!);
+    return db;
+  } catch (err) {
+    console.warn('LowDB dynamic load warning, using in-memory/fs fallback:', err);
+    return {
+      data: inMemoryStore,
+      read: async () => {
+        try {
+          if (fs.existsSync(dbFilePath)) {
+            const raw = fs.readFileSync(dbFilePath, 'utf-8');
+            inMemoryStore = JSON.parse(raw);
+          }
+        } catch (e) {}
+      },
+      write: async () => {
+        try {
+          fs.writeFileSync(dbFilePath, JSON.stringify(inMemoryStore, null, 2));
+        } catch (e) {}
+      }
+    } as any;
+  }
 }
+
