@@ -8,6 +8,11 @@ import { testMysqlConnection, getMysqlPool } from '../server/mysql';
 const app = express();
 app.use(express.json());
 
+// Base API route
+app.get('/api', (_req, res) => {
+  res.json({ status: 'ok', service: 'AgriSteward API' });
+});
+
 // Health check & Database Status
 app.get('/api/health', async (_req, res) => {
   const liveMysql = await testMysqlConnection();
@@ -93,6 +98,7 @@ app.post('/api/lands', async (req, res) => {
       db.data.lands.unshift(newLand);
     }
     
+    // Add activity log
     const logItem = {
       id: `log-${Date.now()}`,
       timestamp: new Date().toLocaleString('id-ID', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' }),
