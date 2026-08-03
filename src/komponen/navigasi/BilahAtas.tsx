@@ -1,6 +1,6 @@
 import React from 'react';
 import { ViewType, UserProfile } from '../../types';
-import { Search, Bell, Settings, Globe, LogOut } from 'lucide-react';
+import { Search, Bell, Settings, Globe, LogOut, Database, History } from 'lucide-react';
 import { USER_AVATAR } from '../../data/mockData';
 
 interface BilahAtasProps {
@@ -11,6 +11,8 @@ interface BilahAtasProps {
   isDbConnected?: boolean;
   userProfile?: UserProfile | null;
   onLogout?: () => void;
+  onOpenDbModal?: () => void;
+  onOpenActivityModal?: () => void;
 }
 
 export const BilahAtas: React.FC<BilahAtasProps> = ({
@@ -21,6 +23,8 @@ export const BilahAtas: React.FC<BilahAtasProps> = ({
   isDbConnected = true,
   userProfile,
   onLogout,
+  onOpenDbModal,
+  onOpenActivityModal,
 }) => {
   return (
     <header className="sticky top-0 z-40 flex justify-between items-center px-4 md:px-8 w-full h-16 bg-[#f9f9ff] border-b border-[#bec9c2]/40 shadow-xs">
@@ -71,12 +75,12 @@ export const BilahAtas: React.FC<BilahAtasProps> = ({
           <div className="flex items-center gap-2 ml-1 pl-3 border-l border-[#bec9c2]/50">
             <div
               onClick={() => setCurrentView('profil')}
-              className="flex items-center gap-2 cursor-pointer hover:bg-[#f0f3ff] p-1 rounded-full transition-colors"
+              className="flex items-center gap-2 cursor-pointer hover:bg-[#f0f3ff] p-1 rounded-full transition-colors shrink-0"
             >
               <img
                 src={userProfile.avatar || USER_AVATAR}
                 alt={userProfile.name}
-                className="w-8 h-8 rounded-full object-cover ring-2 ring-[#004532]/20"
+                className="w-8 h-8 shrink-0 aspect-square rounded-full object-cover ring-2 ring-[#004532]/20"
               />
               <div className="hidden lg:block text-left">
                 <p className="font-semibold text-xs text-[#151c27] truncate max-w-[120px]">{userProfile.name}</p>
