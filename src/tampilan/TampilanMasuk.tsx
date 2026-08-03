@@ -73,7 +73,7 @@ export const TampilanMasuk: React.FC<TampilanMasukProps> = ({ setCurrentView, on
             <ArrowLeft className="w-4 h-4" />
             <span>Ke Beranda</span>
           </button>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 cursor-pointer" onClick={() => setCurrentView('landing')}>
             <LogoAgriSteward className="w-8 h-8" />
             <span className="font-bold text-sm text-[#004532]">AGRI STEWARD</span>
           </div>
