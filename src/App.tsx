@@ -33,10 +33,14 @@ import { ModalTambahLahan } from './komponen/modal/ModalTambahLahan';
 import { ModalEditLahan } from './komponen/modal/ModalEditLahan';
 import { ModalDetailLahan } from './komponen/modal/ModalDetailLahan';
 import { ModalKameraLive } from './komponen/modal/ModalKameraLive';
+import { ModalStatusDatabase } from './komponen/modal/ModalStatusDatabase';
+import { ModalRiwayatAktivitas } from './komponen/modal/ModalRiwayatAktivitas';
 
 export const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewType>('landing');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [isDbStatusModalOpen, setIsDbStatusModalOpen] = useState(false);
+  const [isActivityModalOpen, setIsActivityModalOpen] = useState(false);
 
   // User Auth State
   const [userProfile, setUserProfile] = useState<UserProfile | null>(() => {
@@ -48,16 +52,7 @@ export const App: React.FC = () => {
         console.error(e);
       }
     }
-    // Default logged in user
-    return {
-      id: 'usr-101',
-      name: 'Budi Santoso',
-      email: 'budi@petani.id',
-      phone: '+62 812-3456-7890',
-      location: 'Sukamandi, Subang, Jawa Barat',
-      role: 'Petani Terverifikasi',
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-    };
+    return null;
   });
 
   // Domain states
@@ -90,11 +85,11 @@ export const App: React.FC = () => {
         api.getHistoricalReadings(),
       ]);
 
-      if (Array.isArray(fetchedLands) && fetchedLands.length > 0) setLands(fetchedLands);
-      if (Array.isArray(fetchedLogs) && fetchedLogs.length > 0) setActivityLogs(fetchedLogs);
-      if (Array.isArray(fetchedNotifs) && fetchedNotifs.length > 0) setNotifications(fetchedNotifs);
-      if (Array.isArray(fetchedDevices) && fetchedDevices.length > 0) setDevices(fetchedDevices);
-      if (Array.isArray(fetchedReadings) && fetchedReadings.length > 0) setHistoricalReadings(fetchedReadings);
+      if (fetchedLands) setLands(fetchedLands);
+      if (fetchedLogs) setActivityLogs(fetchedLogs);
+      if (fetchedNotifs) setNotifications(fetchedNotifs);
+      if (fetchedDevices) setDevices(fetchedDevices);
+      if (fetchedReadings) setHistoricalReadings(fetchedReadings);
       setIsDbConnected(true);
     } catch (err) {
       console.warn('Gagal memuat data dari database backend, menggunakan data fallback lokal:', err);
@@ -135,6 +130,17 @@ export const App: React.FC = () => {
   // Handlers for Add/Edit/Delete
   const handleAddLand = async (newLand: Land) => {
     setLands((prev) => [newLand, ...prev]);
+    const addLog: ActivityLog = {
+      id: `log-add-${Date.now()}`,
+      timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ', ' + new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
+      landName: newLand.name,
+      event: `Pendaftaran Lahan Baru (${newLand.name} - ${newLand.areaHa} Ha)`,
+      category: 'PENAMBAHAN',
+      status: 'SELESAI',
+      user: userProfile?.name || 'Petani Pemilik'
+    };
+    setActivityLogs((prev) => [addLog, ...prev]);
+
     try {
       await api.createLand(newLand);
     } catch (e) {
@@ -143,7 +149,21 @@ export const App: React.FC = () => {
   };
 
   const handleUpdateLand = async (id: string, updates: Partial<Land>) => {
+    const existing = lands.find((l) => l.id === id);
+    const landName = existing ? existing.name : 'Lahan';
     setLands((prev) => prev.map((l) => (l.id === id ? { ...l, ...updates } : l)));
+
+    const updateLog: ActivityLog = {
+      id: `log-upd-${Date.now()}`,
+      timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ', ' + new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
+      landName: updates.name || landName,
+      event: `Pembaruan data parameter lahan '${updates.name || landName}'`,
+      category: 'PEMBARUAN',
+      status: 'INFO',
+      user: userProfile?.name || 'Petani Pemilik'
+    };
+    setActivityLogs((prev) => [updateLog, ...prev]);
+
     try {
       await api.updateLand(id, updates);
     } catch (e) {
@@ -152,7 +172,22 @@ export const App: React.FC = () => {
   };
 
   const handleDeleteLand = async (id: string) => {
+    const target = lands.find((l) => l.id === id);
+    const landName = target ? target.name : `ID: ${id}`;
+    
     setLands((prev) => prev.filter((l) => l.id !== id));
+
+    const deleteLog: ActivityLog = {
+      id: `log-del-${Date.now()}`,
+      timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ', ' + new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
+      landName: landName,
+      event: `Penghapusan Lahan (${landName}) dari sistem`,
+      category: 'PENGHAPUSAN',
+      status: 'WARNING',
+      user: userProfile?.name || 'Petani Pemilik'
+    };
+    setActivityLogs((prev) => [deleteLog, ...prev]);
+
     try {
       await api.deleteLand(id);
     } catch (e) {
@@ -162,6 +197,18 @@ export const App: React.FC = () => {
 
   const handleAddDevice = async (newDevice: IoTDevice) => {
     setDevices((prev) => [newDevice, ...prev]);
+
+    const addLog: ActivityLog = {
+      id: `log-add-${Date.now()}`,
+      timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ', ' + new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
+      landName: newDevice.landSector || 'Sektor Utama',
+      event: `Pemasangan Perangkat IoT Baru (${newDevice.name} - ${newDevice.type})`,
+      category: 'PENAMBAHAN',
+      status: 'SELESAI',
+      user: userProfile?.name || 'Petani Pemilik'
+    };
+    setActivityLogs((prev) => [addLog, ...prev]);
+
     try {
       await api.createDevice(newDevice);
     } catch (e) {
@@ -170,7 +217,21 @@ export const App: React.FC = () => {
   };
 
   const handleUpdateDevice = async (id: string, updates: Partial<IoTDevice>) => {
+    const existing = devices.find((d) => d.id === id);
+    const devName = existing ? existing.name : 'Perangkat';
     setDevices((prev) => prev.map((d) => (d.id === id ? { ...d, ...updates } : d)));
+
+    const updateLog: ActivityLog = {
+      id: `log-upd-${Date.now()}`,
+      timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ', ' + new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
+      landName: updates.landSector || existing?.landSector || 'Sektor Lahan',
+      event: `Pembaruan status/konfigurasi perangkat '${updates.name || devName}'`,
+      category: 'PEMBARUAN',
+      status: 'INFO',
+      user: userProfile?.name || 'Petani Pemilik'
+    };
+    setActivityLogs((prev) => [updateLog, ...prev]);
+
     try {
       await api.updateDevice(id, updates);
     } catch (e) {
@@ -179,11 +240,36 @@ export const App: React.FC = () => {
   };
 
   const handleDeleteDevice = async (id: string) => {
+    const target = devices.find((d) => d.id === id);
+    const devName = target ? target.name : `ID: ${id}`;
+    const sector = target ? target.landSector : 'Sektor Lahan';
+
     setDevices((prev) => prev.filter((d) => d.id !== id));
+
+    const deleteLog: ActivityLog = {
+      id: `log-del-${Date.now()}`,
+      timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ', ' + new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
+      landName: sector,
+      event: `Penghapusan perangkat IoT (${devName}) dari sistem`,
+      category: 'PENGHAPUSAN',
+      status: 'WARNING',
+      user: userProfile?.name || 'Petani Pemilik'
+    };
+    setActivityLogs((prev) => [deleteLog, ...prev]);
+
     try {
       await api.deleteDevice(id);
     } catch (e) {
       console.error('API deleteDevice error:', e);
+    }
+  };
+
+  const handleClearActivityLogs = async () => {
+    setActivityLogs([]);
+    try {
+      await api.clearActivityLogs();
+    } catch (e) {
+      console.error('Clear activity logs error:', e);
     }
   };
 
@@ -277,6 +363,7 @@ export const App: React.FC = () => {
         setCurrentView={setCurrentView}
         unreadCount={unreadNotifCount}
         onOpenAddDevice={() => setIsAddDeviceOpen(true)}
+        onOpenActivityModal={() => setIsActivityModalOpen(true)}
       />
 
       {/* Main Content Area */}
@@ -290,6 +377,8 @@ export const App: React.FC = () => {
           isDbConnected={isDbConnected}
           userProfile={userProfile}
           onLogout={handleLogout}
+          onOpenDbModal={() => setIsDbStatusModalOpen(true)}
+          onOpenActivityModal={() => setIsActivityModalOpen(true)}
         />
 
         {/* Dynamic View Body */}
@@ -308,7 +397,9 @@ export const App: React.FC = () => {
                   setCurrentView={setCurrentView}
                   lands={lands}
                   notifications={notifications}
+                  activityLogs={activityLogs}
                   onOpenCamModal={() => setIsCamModalOpen(true)}
+                  onOpenActivityModal={() => setIsActivityModalOpen(true)}
                 />
               )}
 
@@ -328,6 +419,8 @@ export const App: React.FC = () => {
                 <TampilanMonitoring
                   lands={lands}
                   historicalReadings={historicalReadings}
+                  activityLogs={activityLogs}
+                  onOpenActivityModal={() => setIsActivityModalOpen(true)}
                 />
               )}
 
@@ -353,6 +446,8 @@ export const App: React.FC = () => {
                   userProfile={userProfile}
                   onUpdateProfile={handleUpdateProfile}
                   onLogout={handleLogout}
+                  onGoToLogin={() => setCurrentView('login')}
+                  onGoToRegister={() => setCurrentView('register')}
                 />
               )}
             </motion.div>
@@ -407,6 +502,18 @@ export const App: React.FC = () => {
       <ModalKameraLive
         isOpen={isCamModalOpen}
         onClose={() => setIsCamModalOpen(false)}
+      />
+
+      <ModalStatusDatabase
+        isOpen={isDbStatusModalOpen}
+        onClose={() => setIsDbStatusModalOpen(false)}
+      />
+
+      <ModalRiwayatAktivitas
+        isOpen={isActivityModalOpen}
+        onClose={() => setIsActivityModalOpen(false)}
+        activityLogs={activityLogs}
+        onClearLogs={handleClearActivityLogs}
       />
     </div>
   );
