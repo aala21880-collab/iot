@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { User, Save, CheckCircle, ShieldCheck, Cpu, LogOut, Camera, Upload, Link, X, Check } from 'lucide-react';
+import { User, Save, CheckCircle, ShieldCheck, Cpu, LogOut, Camera, Upload, Link, X, Check, Lock, LogIn, UserPlus } from 'lucide-react';
 import { UserProfile } from '../types';
 import { USER_AVATAR, TERRACED_RICE_IMAGE, MORNING_RICE_IMAGE } from '../data/mockData';
 
@@ -7,6 +7,8 @@ interface TampilanProfilProps {
   userProfile?: UserProfile | null;
   onUpdateProfile?: (updated: Partial<UserProfile>) => void;
   onLogout?: () => void;
+  onGoToLogin?: () => void;
+  onGoToRegister?: () => void;
 }
 
 const PRESET_AVATARS = [
@@ -18,10 +20,16 @@ const PRESET_AVATARS = [
   { id: 'av6', label: 'Ikon Komunitas', url: 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=300&auto=format&fit=crop&q=80' },
 ];
 
-export const TampilanProfil: React.FC<TampilanProfilProps> = ({ userProfile, onUpdateProfile, onLogout }) => {
-  const [farmerName, setFarmerName] = useState(userProfile?.name || 'Budi Santoso');
-  const [farmLocation, setFarmLocation] = useState(userProfile?.location || 'Sukamandi, Subang, Jawa Barat');
-  const [whatsapp, setWhatsapp] = useState(userProfile?.phone || '+62 812-3456-7890');
+export const TampilanProfil: React.FC<TampilanProfilProps> = ({
+  userProfile,
+  onUpdateProfile,
+  onLogout,
+  onGoToLogin,
+  onGoToRegister,
+}) => {
+  const [farmerName, setFarmerName] = useState(userProfile?.name || '');
+  const [farmLocation, setFarmLocation] = useState(userProfile?.location || '');
+  const [whatsapp, setWhatsapp] = useState(userProfile?.phone || '');
   const [currentAvatar, setCurrentAvatar] = useState(userProfile?.avatar || USER_AVATAR);
   const [autoIrrigation, setAutoIrrigation] = useState(true);
   const [refreshInterval, setRefreshInterval] = useState('30');
@@ -86,6 +94,57 @@ export const TampilanProfil: React.FC<TampilanProfilProps> = ({ userProfile, onU
     }
   };
 
+  // If user is not logged in, show login requirement screen
+  if (!userProfile) {
+    return (
+      <div className="space-y-6 max-w-4xl">
+        <div>
+          <h2 className="font-extrabold text-2xl md:text-3xl text-[#151c27]">Profil Pengguna</h2>
+          <p className="text-sm text-[#3f4944] mt-1">
+            Masuk ke akun Anda untuk melihat dan mengelola data profil pengelola lahan.
+          </p>
+        </div>
+
+        <div className="bg-white p-8 md:p-12 rounded-3xl border border-[#bec9c2]/40 shadow-xs text-center space-y-6">
+          <div className="w-20 h-20 bg-[#f0f3ff] rounded-full flex items-center justify-center mx-auto text-[#004532]">
+            <Lock className="w-10 h-10 text-[#004532]" />
+          </div>
+
+          <div className="max-w-md mx-auto space-y-2">
+            <h3 className="font-extrabold text-xl text-[#151c27]">Anda Belum Masuk Akun</h3>
+            <p className="text-xs md:text-sm text-[#3f4944] leading-relaxed">
+              Informasi profil pengelola, foto, lokasi operasional, dan pengaturan otomatisasi irigasi hanya ditampilkan setelah Anda masuk ke akun Agri Steward.
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+            {onGoToLogin && (
+              <button
+                type="button"
+                onClick={onGoToLogin}
+                className="w-full sm:w-auto px-6 py-3 bg-[#004532] text-white font-bold text-xs md:text-sm rounded-xl hover:bg-[#065f46] transition-colors shadow-sm flex items-center justify-center gap-2"
+              >
+                <LogIn className="w-4 h-4 text-[#a6f2d1]" />
+                <span>Masuk ke Akun</span>
+              </button>
+            )}
+
+            {onGoToRegister && (
+              <button
+                type="button"
+                onClick={onGoToRegister}
+                className="w-full sm:w-auto px-6 py-3 bg-[#f0f3ff] text-[#004532] border border-[#bec9c2] font-bold text-xs md:text-sm rounded-xl hover:bg-[#e2e8f8] transition-colors flex items-center justify-center gap-2"
+              >
+                <UserPlus className="w-4 h-4 text-[#004532]" />
+                <span>Daftar Akun Baru</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 max-w-4xl">
       {/* Title */}
@@ -107,11 +166,11 @@ export const TampilanProfil: React.FC<TampilanProfilProps> = ({ userProfile, onU
       <div className="bg-white p-6 rounded-xl border border-[#bec9c2]/40 shadow-xs flex flex-col md:flex-row items-center justify-between gap-6">
         <div className="flex flex-col md:flex-row items-center gap-6 text-center md:text-left">
           {/* Avatar with Overlay Camera Button */}
-          <div className="relative group cursor-pointer" onClick={() => setShowAvatarModal(true)}>
+          <div className="relative group cursor-pointer shrink-0" onClick={() => setShowAvatarModal(true)}>
             <img
               src={currentAvatar}
               alt="Avatar Profil"
-              className="w-24 h-24 rounded-full object-cover ring-4 ring-[#004532]/20 group-hover:opacity-85 transition-opacity"
+              className="w-24 h-24 h-[96px] w-[96px] shrink-0 aspect-square rounded-full object-cover ring-4 ring-[#004532]/20 group-hover:opacity-85 transition-opacity"
             />
             <button
               type="button"
