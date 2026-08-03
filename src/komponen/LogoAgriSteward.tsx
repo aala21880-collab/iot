@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState } from 'react';
+import logoGreenImage from '../assets/images/agri_steward_green_logo_1785221634759.jpg';
 
 interface LogoAgriStewardProps {
   className?: string;
@@ -9,18 +10,19 @@ interface LogoAgriStewardProps {
 export const LogoAgriSteward: React.FC<LogoAgriStewardProps> = ({
   className = 'w-9 h-9',
   size,
-  useImage = true,
+  useImage = false,
 }) => {
+  const [imgError, setImgError] = useState(false);
   const styleObj = size ? { width: size, height: size } : undefined;
 
-  if (useImage) {
+  if (useImage && !imgError) {
     return (
       <img
-        src="/src/assets/images/agri_steward_green_logo_1785221634759.jpg"
+        src={logoGreenImage || '/assets/images/agri_steward_green_logo_1785221634759.jpg'}
         alt="AGRI STEWARD Logo"
-        className={`object-cover rounded-xl shadow-xs border border-[#004532]/20 ${className}`}
+        className={`object-cover rounded-xl shadow-xs border border-[#004532]/20 shrink-0 aspect-square ${className}`}
         style={styleObj}
-        referrerPolicy="no-referrer"
+        onError={() => setImgError(true)}
       />
     );
   }
@@ -28,7 +30,7 @@ export const LogoAgriSteward: React.FC<LogoAgriStewardProps> = ({
   return (
     <svg
       viewBox="0 0 100 100"
-      className={`select-none shrink-0 ${className}`}
+      className={`select-none shrink-0 rounded-xl shadow-xs ${className}`}
       style={styleObj}
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
@@ -51,8 +53,8 @@ export const LogoAgriSteward: React.FC<LogoAgriStewardProps> = ({
       </defs>
 
       {/* Rounded Container */}
-      <rect x="4" y="4" width="92" height="92" rx="22" fill="url(#shieldGrad)" />
-      <rect x="8" y="8" width="84" height="84" rx="18" fill="none" stroke="#10b981" strokeWidth="1.5" strokeOpacity="0.3" />
+      <rect x="2" y="2" width="96" height="96" rx="22" fill="url(#shieldGrad)" />
+      <rect x="6" y="6" width="88" height="88" rx="18" fill="none" stroke="#10b981" strokeWidth="1.5" strokeOpacity="0.4" />
 
       {/* Geometric Leaf Sprout / Letter A Emblem */}
       <path
@@ -78,6 +80,7 @@ export const LogoAgriSteward: React.FC<LogoAgriStewardProps> = ({
     </svg>
   );
 };
+
 
 
 
